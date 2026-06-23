@@ -1,0 +1,15 @@
+.env
+node_modules/
+frontend/dist/
+db_data/
+bin/
+*.exe
+*.out
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.sw?
+logs/
+*.log
