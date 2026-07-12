@@ -37,7 +37,7 @@ function onKeydown(e: KeyboardEvent) {
 
 <template>
   <div
-    class="flex items-end gap-2 bg-white shadow-sm dark:bg-gray-900 px-2 m-3 py-2 rounded-4xl border border-slate-300/30"
+    class="flex items-end gap-2 bg-white shadow-sm shadow-gray-100 dark:shadow-gray-800/70 dark:bg-gray-900 px-2 m-3 py-2 rounded-4xl border border-slate-300/30 dark:border-gray-700/30"
   >
     <textarea
       ref="textarea"
