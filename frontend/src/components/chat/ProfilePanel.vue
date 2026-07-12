@@ -6,6 +6,7 @@ import {
   CheckIcon,
   XMarkIcon,
   ArrowRightStartOnRectangleIcon,
+  ChevronLeftIcon,
 } from '@heroicons/vue/24/outline'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useChatStore } from '@/stores/useChatStore'
@@ -18,6 +19,10 @@ const editing = ref(false)
 const displayName = ref('')
 const status = ref('')
 const error = ref('')
+
+const emit = defineEmits<{
+  'update:isSidebarOpen': [value: boolean]
+}>()
 
 /**
  * Enters edit mode and populates fields with current profile values.
@@ -115,6 +120,13 @@ async function logout() {
           title="Sign out"
         >
           <ArrowRightStartOnRectangleIcon class="w-4 h-4" />
+        </button>
+        <button
+          @click="emit('update:isSidebarOpen', false)"
+          class="flex size-10 items-center justify-center rounded-full text-slate-900 transition-all hover:cursor-pointer hover:bg-slate-100 active:scale-95 dark:text-slate-100 dark:hover:bg-slate-800"
+          title="Collapse sidebar"
+        >
+          <ChevronLeftIcon class="size-5" />
         </button>
       </template>
     </div>
