@@ -10,6 +10,7 @@ type MessageRepository interface {
 	Create(chatID, userID int, content string) (*models.MessageResponse, error)
 	FindByChatID(chatID, limit, offset int) ([]models.MessageResponse, error)
 	MarkChatAsRead(chatID, readerID int) error
+	Search(chatID int, query string, limit int) ([]models.MessageResponse, error)
 }
 
 // pgMessageRepository is a PostgreSQL-backed implementation of MessageRepository.
@@ -89,4 +90,40 @@ func (r *pgMessageRepository) MarkChatAsRead(chatID, readerID int) error {
 		chatID, readerID,
 	)
 	return err
+}
+
+// Search performs a case-insensitive full-text search over messages in a chat.
+func (r *pgMessageRepository) Search(chatID int, query string, limit int) ([]models.MessageResponse, error) {
+	rows, err := r.db.Queryx(`
+		SELECT m.id, m.chat_id, m.user_id, m.content, m.is_read, m.created_at,
+		       u.username AS sender_username, u.display_name AS sender_display_name
+		FROM messages m
+		JOIN users u ON m.user_id = u.id
+		WHERE m.chat_id = $1
+		  AND m.content ILIKE $2
+		ORDER BY m.created_at DESC
+		LIMIT $3
+	`, chatID, "%"+query+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var messages []models.MessageResponse
+	for rows.Next() {
+		var msg models.MessageResponse
+		if err := rows.Scan(
+			&msg.ID, &msg.ChatID, &msg.UserID, &msg.Content,
+			&msg.IsRead, &msg.CreatedAt,
+			&msg.SenderUsername, &msg.SenderDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+
+	if messages == nil {
+		messages = []models.MessageResponse{}
+	}
+	return messages, nil
 }

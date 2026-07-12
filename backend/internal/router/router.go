@@ -66,6 +66,7 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 
 			r.Get("/chats", chatH.GetChats)
 			r.Post("/chats", chatH.CreateChat)
+			r.Get("/chats/{id}/messages/search", chatH.SearchMessages)
 			r.Get("/chats/{id}/messages", chatH.GetMessages)
 		})
 	})

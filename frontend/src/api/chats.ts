@@ -38,3 +38,11 @@ export const createChat = (payload: {
  */
 export const getMessages = (chatID: number, limit = 50, offset = 0): Promise<Message[]> =>
   request<Message[]>(`/api/chats/${chatID}/messages?limit=${limit}&offset=${offset}`)
+
+/**
+ * Searches messages in a chat by content substring.
+ */
+export const searchMessages = (chatID: number, q: string, limit = 50): Promise<Message[]> =>
+  request<Message[]>(
+    `/api/chats/${chatID}/messages/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+  )

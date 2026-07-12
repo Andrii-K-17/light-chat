@@ -22,6 +22,11 @@ export const useChatStore = defineStore('chat', () => {
   /** Whether older messages are being loaded. */
   const loadingMessages = ref(false)
 
+  /** Search results for in-chat message search. */
+  const searchResults = ref<Message[]>([])
+
+  const searchLoading = ref(false)
+
   /** Current WebSocket instance. */
   let socket: WebSocket | null = null
 
@@ -197,6 +202,27 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
   }
 
+  /**
+   * Searches messages in the active chat by query string.
+   */
+  async function searchMessages(query: string): Promise<void> {
+    if (!activeChatId.value) return
+
+    if (!query.trim()) {
+      searchResults.value = []
+      return
+    }
+
+    searchLoading.value = true
+    try {
+      searchResults.value = await chatsApi.searchMessages(activeChatId.value, query)
+    } catch {
+      searchResults.value = []
+    } finally {
+      searchLoading.value = false
+    }
+  }
+
   return {
     chats,
     activeChatId,
@@ -211,5 +237,8 @@ export const useChatStore = defineStore('chat', () => {
     sendReadReceipt,
     disconnectWs,
     reset,
+    searchResults,
+    searchLoading,
+    searchMessages,
   }
 })

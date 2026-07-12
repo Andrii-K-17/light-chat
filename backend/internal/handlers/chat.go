@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Andrii-K-17/light-chat/internal/middleware"
 	"github.com/Andrii-K-17/light-chat/internal/repository"
@@ -94,7 +95,7 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	members, _ := h.chatRepo.GetMembers(chat.ID)
-	
+
 	response.JSON(w, http.StatusCreated, map[string]any{
 		"id":       chat.ID,
 		"name":     chat.Name,
@@ -139,6 +140,44 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.messageRepo.MarkChatAsRead(chatID, userID)
+
+	response.JSON(w, http.StatusOK, messages)
+}
+
+// SearchMessages performs a full-text search over messages in a chat.
+func (h *ChatHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
+	}
+
+	isMember, err := h.chatRepo.IsMember(chatID, userID)
+	if err != nil || !isMember {
+		response.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		response.Error(w, http.StatusBadRequest, "q param required")
+		return
+	}
+
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+
+	messages, err := h.messageRepo.Search(chatID, query, limit)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 
 	response.JSON(w, http.StatusOK, messages)
 }
