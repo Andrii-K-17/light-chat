@@ -52,25 +52,41 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 	wsH := ws.NewHandler(hub, messageRepo, chatRepo, cfg.JWTSecret)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Post("/auth/register", authH.Register)
-		r.Post("/auth/login", authH.Login)
-		r.Post("/auth/logout", authH.Logout)
-		r.Post("/auth/refresh", authH.Refresh)
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register", authH.Register)
+			r.Post("/login", authH.Login)
+			r.Post("/logout", authH.Logout)
+			r.Post("/refresh", authH.Refresh)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.Auth(cfg.JWTSecret))
+
+				r.Get("/me", authH.Me)
+				r.Patch("/me", authH.UpdateProfile)
+			})
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(cfg.JWTSecret))
 
-			r.Get("/auth/me", authH.Me)
-			r.Patch("/auth/me", authH.UpdateProfile)
 			r.Get("/users/search", authH.SearchUser)
 
-			r.Get("/chats", chatH.GetChats)
-			r.Post("/chats", chatH.CreateChat)
-			r.Get("/chats/{id}/messages/search", chatH.SearchMessages)
-			r.Get("/chats/{id}/messages", chatH.GetMessages)
-			r.Patch("/chats/{id}/messages/{messageId}", chatH.UpdateMessage)
-			r.Delete("/chats/{id}/messages/{messageId}", chatH.DeleteMessage)
-			r.Delete("/chats/{id}", chatH.DeleteChat)
+			r.Route("/chats", func(r chi.Router) {
+				r.Get("/", chatH.GetChats)
+				r.Post("/", chatH.CreateChat)
+
+				r.Route("/{id}", func(r chi.Router) {
+					r.Delete("/", chatH.DeleteChat)
+
+					r.Route("/messages", func(r chi.Router) {
+						r.Get("/", chatH.GetMessages)
+						r.Get("/search", chatH.SearchMessages)
+
+						r.Patch("/{messageId}", chatH.UpdateMessage)
+						r.Delete("/{messageId}", chatH.DeleteMessage)
+					})
+				})
+			})
 		})
 	})
 
