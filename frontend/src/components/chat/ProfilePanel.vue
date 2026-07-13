@@ -23,9 +23,9 @@ const error = ref('')
 const showLogoutModal = ref(false)
 const isLoggingOut = ref(false)
 
-const emit = defineEmits<{
-  'update:isSidebarOpen': [value: boolean]
-}>()
+const emit = defineEmits<{ 'update:isSidebarOpen': [value: boolean] }>()
+
+defineProps<{ isSidebarOpen: boolean }>()
 
 /**
  * Enters edit mode and populates fields with current profile values.

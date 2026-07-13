@@ -8,6 +8,10 @@ import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 
 const props = defineProps<{ chat: Chat; compact?: boolean }>()
 
+const emit = defineEmits<{
+  open: []
+}>()
+
 const auth = useAuthStore()
 const chatStore = useChatStore()
 
@@ -67,6 +71,11 @@ async function confirmDelete() {
     deleting.value = false
   }
 }
+
+async function openChat() {
+  await chatStore.openChat(props.chat.id)
+  emit('open')
+}
 </script>
 
 <template>
@@ -94,7 +103,7 @@ async function confirmDelete() {
   <!-- Full mode -->
   <li
     v-else
-    @click="chatStore.openChat(chat.id)"
+    @click="openChat"
     @mouseenter="showActions = true"
     @mouseleave="showActions = false"
     :class="[
@@ -133,7 +142,7 @@ async function confirmDelete() {
             v-if="showActions"
             @click="openDeleteModal"
             :disabled="deleting"
-            class="flex-shrink-0 rounded-full text-slate-400 transition-all hover:cursor-pointer hover:bg-rose-50 hover:text-rose-500 active:scale-95 disabled:opacity-50 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
+            class="hidden md:flex flex-shrink-0 rounded-full text-slate-400 transition-all hover:cursor-pointer hover:bg-rose-50 hover:text-rose-500 active:scale-95 disabled:opacity-50 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
             title="Delete chat"
           >
             <TrashIcon class="size-4" />
