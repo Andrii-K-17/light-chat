@@ -23,3 +23,12 @@
   opacity: 0;
   transform: translateY(8px) scale(0.98);
 }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #8ce1be transparent;
+}
+
+.dark * {
+  scrollbar-color: #4a7764 transparent;
+}
