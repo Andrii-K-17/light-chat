@@ -11,6 +11,9 @@ type MessageRepository interface {
 	FindByChatID(chatID, limit, offset int) ([]models.MessageResponse, error)
 	MarkChatAsRead(chatID, readerID int) error
 	Search(chatID int, query string, limit int) ([]models.MessageResponse, error)
+	Update(messageID, userID int, content string) (*models.MessageResponse, error)
+	Delete(messageID, userID int) (bool, error)
+	GetChatID(messageID int) (int, error)
 }
 
 // pgMessageRepository is a PostgreSQL-backed implementation of MessageRepository.
@@ -126,4 +129,46 @@ func (r *pgMessageRepository) Search(chatID int, query string, limit int) ([]mod
 		messages = []models.MessageResponse{}
 	}
 	return messages, nil
+}
+
+// Update edits the content of a message owned by the given user.
+func (r *pgMessageRepository) Update(messageID, userID int, content string) (*models.MessageResponse, error) {
+	var msg models.MessageResponse
+	err := r.db.QueryRowx(`
+		UPDATE messages SET content = $1
+		WHERE id = $2 AND user_id = $3
+		RETURNING id, chat_id, user_id, content, is_read, created_at
+	`, content, messageID, userID).StructScan(&msg.Message)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = r.db.Get(&msg.SenderUsername, "SELECT username FROM users WHERE id=$1", userID)
+	_ = r.db.Get(&msg.SenderDisplayName, "SELECT display_name FROM users WHERE id=$1", userID)
+
+	return &msg, nil
+}
+
+// Delete removes a message owned by the given user.
+func (r *pgMessageRepository) Delete(messageID, userID int) (bool, error) {
+	res, err := r.db.Exec(
+		"DELETE FROM messages WHERE id=$1 AND user_id=$2",
+		messageID, userID,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return n > 0, nil
+}
+
+// GetChatID returns the chat_id for a given message.
+func (r *pgMessageRepository) GetChatID(messageID int) (int, error) {
+	var chatID int
+	err := r.db.Get(&chatID, "SELECT chat_id FROM messages WHERE id=$1", messageID)
+	return chatID, err
 }

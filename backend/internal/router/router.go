@@ -48,7 +48,7 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 		cfg.RefreshExpiry,
 		cfg.IsProd(),
 	)
-	chatH := handlers.NewChatHandler(chatRepo, messageRepo, userRepo)
+	chatH := handlers.NewChatHandler(chatRepo, messageRepo, userRepo, hub)
 	wsH := ws.NewHandler(hub, messageRepo, chatRepo, cfg.JWTSecret)
 
 	r.Route("/api", func(r chi.Router) {
@@ -68,6 +68,9 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 			r.Post("/chats", chatH.CreateChat)
 			r.Get("/chats/{id}/messages/search", chatH.SearchMessages)
 			r.Get("/chats/{id}/messages", chatH.GetMessages)
+			r.Patch("/chats/{id}/messages/{messageId}", chatH.UpdateMessage)
+			r.Delete("/chats/{id}/messages/{messageId}", chatH.DeleteMessage)
+			r.Delete("/chats/{id}", chatH.DeleteChat)
 		})
 	})
 

@@ -9,6 +9,7 @@ import (
 	"github.com/Andrii-K-17/light-chat/internal/middleware"
 	"github.com/Andrii-K-17/light-chat/internal/repository"
 	"github.com/Andrii-K-17/light-chat/internal/response"
+	"github.com/Andrii-K-17/light-chat/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -17,6 +18,7 @@ type ChatHandler struct {
 	chatRepo    repository.ChatRepository
 	messageRepo repository.MessageRepository
 	userRepo    repository.UserRepository
+	hub         *ws.Hub
 }
 
 // NewChatHandler initializes and returns a new ChatHandler.
@@ -24,11 +26,13 @@ func NewChatHandler(
 	chatRepo repository.ChatRepository,
 	messageRepo repository.MessageRepository,
 	userRepo repository.UserRepository,
+	hub *ws.Hub,
 ) *ChatHandler {
 	return &ChatHandler{
 		chatRepo:    chatRepo,
 		messageRepo: messageRepo,
 		userRepo:    userRepo,
+		hub:         hub,
 	}
 }
 
@@ -180,4 +184,103 @@ func (h *ChatHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, messages)
+}
+
+// DeleteChat removes a chat if the requesting user has permission.
+func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
+	}
+
+	deleted, err := h.chatRepo.Delete(chatID, userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !deleted {
+		response.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+// updateMessageRequest represents the message edit payload.
+type updateMessageRequest struct {
+	Content string `json:"content"`
+}
+
+// UpdateMessage edits a message owned by the authenticated user.
+func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	messageID, err := strconv.Atoi(chi.URLParam(r, "messageId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid message id")
+		return
+	}
+
+	var req updateMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		response.Error(w, http.StatusUnprocessableEntity, "content is required")
+		return
+	}
+
+	msg, err := h.messageRepo.Update(messageID, userID, content)
+	if err != nil {
+		response.Error(w, http.StatusForbidden, "forbidden or message not found")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, msg)
+
+	event, _ := json.Marshal(ws.Event{
+		Type:    "message_updated",
+		Payload: mustMarshalChat(msg),
+	})
+	h.hub.BroadcastToChat(msg.ChatID, event)
+}
+
+// DeleteMessage removes a message owned by the authenticated user.
+func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	messageID, err := strconv.Atoi(chi.URLParam(r, "messageId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid message id")
+		return
+	}
+
+	deleted, err := h.messageRepo.Delete(messageID, userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !deleted {
+		response.Error(w, http.StatusForbidden, "forbidden or message not found")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
+
+	if chatID, err := h.messageRepo.GetChatID(messageID); err == nil {
+		payload, _ := json.Marshal(map[string]int{"message_id": messageID, "chat_id": chatID})
+		event, _ := json.Marshal(ws.Event{Type: "message_deleted", Payload: payload})
+		h.hub.BroadcastToChat(chatID, event)
+	}
+}
+
+func mustMarshalChat(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
 }

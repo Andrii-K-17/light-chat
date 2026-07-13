@@ -14,6 +14,7 @@ type ChatRepository interface {
 	AddMember(chatID, userID int) error
 	IsMember(chatID, userID int) (bool, error)
 	GetMembers(chatID int) ([]models.ChatMember, error)
+	Delete(chatID, userID int) (bool, error)
 }
 
 // pgChatRepository is a PostgreSQL-backed implementation of ChatRepository.
@@ -159,4 +160,29 @@ func (r *pgChatRepository) GetMembers(chatID int) ([]models.ChatMember, error) {
 		members = []models.ChatMember{}
 	}
 	return members, nil
+}
+
+// Delete removes a chat if the user is its creator or a member.
+func (r *pgChatRepository) Delete(chatID, userID int) (bool, error) {
+	res, err := r.db.Exec(`
+		DELETE FROM chats
+		WHERE id = $1
+		  AND (
+		    created_by = $2
+		    OR (
+		      is_group = false
+		      AND EXISTS (
+		        SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2
+		      )
+		    )
+		  )
+	`, chatID, userID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
