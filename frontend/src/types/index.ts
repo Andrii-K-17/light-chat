@@ -37,11 +37,16 @@ export interface Chat {
 }
 
 export interface WsEvent {
-  type: 'new_message' | 'read_receipt'
+  type: 'new_message' | 'read_receipt' | 'message_updated' | 'message_deleted'
   payload: unknown
 }
 
 export interface WsReadReceipt {
   chat_id: number
   reader_id: number
+}
+
+export interface WsMessageDeleted {
+  message_id: number
+  chat_id: number
 }

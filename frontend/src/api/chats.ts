@@ -46,3 +46,30 @@ export const searchMessages = (chatID: number, q: string, limit = 50): Promise<M
   request<Message[]>(
     `/api/chats/${chatID}/messages/search?q=${encodeURIComponent(q)}&limit=${limit}`,
   )
+
+/**
+ * Deletes a chat by ID.
+ */
+export const deleteChat = (chatID: number): Promise<{ deleted: boolean }> =>
+  request<{ deleted: boolean }>(`/api/chats/${chatID}`, { method: 'DELETE' })
+
+/**
+ * Edits the content of a message.
+ */
+export const updateMessage = (
+  chatID: number,
+  messageID: number,
+  content: string,
+): Promise<Message> =>
+  request<Message>(`/api/chats/${chatID}/messages/${messageID}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  })
+
+/**
+ * Deletes a message by ID.
+ */
+export const deleteMessage = (chatID: number, messageID: number): Promise<{ deleted: boolean }> =>
+  request<{ deleted: boolean }>(`/api/chats/${chatID}/messages/${messageID}`, {
+    method: 'DELETE',
+  })

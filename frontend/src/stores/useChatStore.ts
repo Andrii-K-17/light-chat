@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { Chat, Message, WsEvent, WsReadReceipt } from '@/types'
+import type { Chat, Message, WsEvent, WsReadReceipt, WsMessageDeleted } from '@/types'
 import * as chatsApi from '@/api/chats'
 import { useAuthStore } from '@/stores/useAuthStore'
 
@@ -25,6 +25,7 @@ export const useChatStore = defineStore('chat', () => {
   /** Search results for in-chat message search. */
   const searchResults = ref<Message[]>([])
 
+  /** Whether a message search is in progress. */
   const searchLoading = ref(false)
 
   /** Current WebSocket instance. */
@@ -98,16 +99,61 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * Deletes a chat and removes it from the store.
+   */
+  async function deleteChat(chatId: number): Promise<void> {
+    await chatsApi.deleteChat(chatId)
+    chats.value = chats.value.filter((c) => c.id !== chatId)
+    if (activeChatId.value === chatId) {
+      disconnectWs()
+      activeChatId.value = null
+      messages.value = []
+    }
+  }
+
+  /**
+   * Edits a message via the API and updates it in the local list.
+   */
+  async function editMessage(messageId: number, content: string): Promise<void> {
+    if (!activeChatId.value) return
+    const updated = await chatsApi.updateMessage(activeChatId.value, messageId, content)
+    messages.value = messages.value.map((m) => (m.id === messageId ? { ...m, ...updated } : m))
+  }
+
+  /**
+   * Deletes a message via the API and removes it from the local list.
+   */
+  async function removeMessage(messageId: number): Promise<void> {
+    if (!activeChatId.value) return
+    await chatsApi.deleteMessage(activeChatId.value, messageId)
+    messages.value = messages.value.filter((m) => m.id !== messageId)
+  }
+
+  /**
+   * Searches messages in the active chat by query string.
+   */
+  async function searchMessages(query: string): Promise<void> {
+    if (!activeChatId.value) return
+    if (!query.trim()) {
+      searchResults.value = []
+      return
+    }
+    searchLoading.value = true
+    try {
+      searchResults.value = await chatsApi.searchMessages(activeChatId.value, query)
+    } catch {
+      searchResults.value = []
+    } finally {
+      searchLoading.value = false
+    }
+  }
+
+  /**
    * Connects a WebSocket for the given chat and sets up event handling.
    */
   function connectWs(chatId: number): void {
-    const token = document.cookie
-      .split('; ')
-      .find((row) => row.startsWith('token='))
-      ?.split('=')[1]
-
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${protocol}://${location.host}/ws?chat_id=${chatId}${token ? `&token=${token}` : ''}`
+    const url = `${protocol}://${location.host}/ws?chat_id=${chatId}`
 
     socket = new WebSocket(url)
 
@@ -163,6 +209,20 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
+    if (event.type === 'message_updated') {
+      const updated = event.payload as Message
+      if (updated.chat_id === activeChatId.value) {
+        messages.value = messages.value.map((m) => (m.id === updated.id ? { ...m, ...updated } : m))
+      }
+    }
+
+    if (event.type === 'message_deleted') {
+      const { message_id, chat_id } = event.payload as WsMessageDeleted
+      if (chat_id === activeChatId.value) {
+        messages.value = messages.value.filter((m) => m.id !== message_id)
+      }
+    }
+
     if (event.type === 'read_receipt') {
       const receipt = event.payload as WsReadReceipt
       if (receipt.chat_id === activeChatId.value) {
@@ -200,27 +260,7 @@ export const useChatStore = defineStore('chat', () => {
     chats.value = []
     activeChatId.value = null
     messages.value = []
-  }
-
-  /**
-   * Searches messages in the active chat by query string.
-   */
-  async function searchMessages(query: string): Promise<void> {
-    if (!activeChatId.value) return
-
-    if (!query.trim()) {
-      searchResults.value = []
-      return
-    }
-
-    searchLoading.value = true
-    try {
-      searchResults.value = await chatsApi.searchMessages(activeChatId.value, query)
-    } catch {
-      searchResults.value = []
-    } finally {
-      searchLoading.value = false
-    }
+    searchResults.value = []
   }
 
   return {
@@ -229,16 +269,19 @@ export const useChatStore = defineStore('chat', () => {
     activeChat,
     messages,
     loadingMessages,
+    searchResults,
+    searchLoading,
     loadChats,
     openChat,
     loadMoreMessages,
     createChat,
+    deleteChat,
+    editMessage,
+    removeMessage,
+    searchMessages,
     sendMessage,
     sendReadReceipt,
     disconnectWs,
     reset,
-    searchResults,
-    searchLoading,
-    searchMessages,
   }
 })
