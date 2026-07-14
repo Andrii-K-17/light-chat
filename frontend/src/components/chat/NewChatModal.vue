@@ -78,38 +78,52 @@ async function save() {
 
 <template>
   <div
-    class="fixed inset-0 bg-slate-800/30 backdrop-blur-sm z-50 flex items-center justify-center p-4 dark:bg-black/50"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
     @click.self="emit('close')"
   >
     <div
-      class="bg-white border border-emerald-200 rounded-2xl w-full max-w-sm shadow-2xl dark:bg-slate-900 dark:border-slate-800 transition-colors overflow-hidden"
+      class="flex w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
     >
       <div
-        class="flex items-center justify-between px-5 py-4 border-b border-emerald-200 dark:border-slate-800"
+        class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800"
       >
         <h2 class="font-semibold text-slate-900 dark:text-slate-100">New Chat</h2>
+
         <button
           @click="emit('close')"
-          class="text-gray-500 hover:text-rose-600 hover:cursor-pointer transition-colors dark:text-slate-400 dark:hover:text-rose-400"
+          class="flex size-8 items-center justify-center rounded-full text-slate-400 transition-all hover:cursor-pointer hover:bg-slate-100 hover:text-rose-500 active:scale-95 dark:hover:bg-slate-800 dark:hover:text-rose-400"
+          aria-label="Close"
         >
-          <XMarkIcon class="w-5 h-5" />
+          <XMarkIcon class="size-5" />
         </button>
       </div>
 
-      <div class="px-5 py-4 space-y-4">
+      <div class="space-y-4 px-5 py-4">
         <div
-          class="flex bg-emerald-50 rounded-xl p-1 border border-emerald-200 dark:bg-slate-800 dark:border-slate-700"
+          class="flex rounded-xl border border-slate-200 bg-slate-100/70 p-1 dark:border-slate-700 dark:bg-slate-800"
         >
           <button
-            v-for="m in ['direct', 'group']"
-            :key="m"
-            @click="mode = m"
+            @click="mode = 'direct'"
             :class="[
-              'flex-1 py-1 rounded-lg text-xs font-medium hover:cursor-pointer transition-all capitalize',
-              mode === m ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-slate-400',
+              'flex-1 rounded-lg py-1.5 text-xs font-medium transition-all hover:cursor-pointer',
+              mode === 'direct'
+                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
             ]"
           >
-            {{ m === 'direct' ? 'Direct' : 'Group' }}
+            Direct
+          </button>
+
+          <button
+            @click="mode = 'group'"
+            :class="[
+              'flex-1 rounded-lg py-1.5 text-xs font-medium transition-all hover:cursor-pointer',
+              mode === 'group'
+                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200',
+            ]"
+          >
+            Group
           </button>
         </div>
 
@@ -118,72 +132,113 @@ async function save() {
             v-model="groupName"
             type="text"
             placeholder="Group name (optional)"
-            class="w-full bg-emerald-50/30 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-gray-400 focus:outline-none focus:border-emerald-400 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-500"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
         </div>
 
-        <div class="flex gap-2">
-          <input
-            v-model="searchQuery"
-            @keydown.enter="search"
-            type="text"
-            placeholder="Search by username..."
-            class="flex-1 bg-emerald-50/30 border border-emerald-200 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder-gray-400 focus:outline-none focus:border-emerald-400 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-500"
-          />
-          <button
-            @click="search"
-            class="px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-xl text-sm hover:cursor-pointer transition-colors dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-emerald-400"
-          >
-            Find
-          </button>
-        </div>
+        <div>
+          <div class="flex gap-2">
+            <input
+              v-model="searchQuery"
+              @keydown.enter="search"
+              type="text"
+              placeholder="Search by username..."
+              class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
+            />
 
-        <p v-if="searchError" class="text-xs text-rose-500 dark:text-rose-400">
-          {{ searchError }}
-        </p>
+            <button
+              @click="search"
+              :disabled="!searchQuery.trim()"
+              class="rounded-xl bg-emerald-500/10 px-3 text-sm font-medium text-emerald-600 transition-all hover:cursor-pointer hover:bg-emerald-500/20 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-400/10 dark:text-emerald-400 dark:hover:bg-emerald-400/20"
+            >
+              Find
+            </button>
+          </div>
+
+          <p v-if="searchError" class="mt-1.5 text-xs text-rose-500 dark:text-rose-400">
+            {{ searchError }}
+          </p>
+        </div>
 
         <div
           v-if="foundUser"
-          class="flex items-center justify-between px-3 py-2 rounded-xl border border-emerald-200 dark:border-slate-700"
+          class="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-700"
         >
-          <div>
-            <p class="text-sm font-medium text-slate-900 dark:text-slate-100">
+          <div
+            class="flex size-9 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+          >
+            {{ foundUser.display_name.charAt(0).toUpperCase() }}
+          </div>
+
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
               {{ foundUser.display_name }}
             </p>
-            <p class="text-xs text-gray-500 dark:text-slate-400">@{{ foundUser.username }}</p>
+            <p class="truncate text-xs text-slate-400 dark:text-slate-500">
+              @{{ foundUser.username }}
+            </p>
           </div>
+
           <button
             @click="addUser"
-            class="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg hover:cursor-pointer transition-colors dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-emerald-400"
+            class="flex size-8 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 transition-all hover:cursor-pointer hover:bg-emerald-500/20 active:scale-95 dark:bg-emerald-400/10 dark:text-emerald-400 dark:hover:bg-emerald-400/20"
+            title="Add user"
           >
-            <UserPlusIcon class="w-4 h-4" />
+            <UserPlusIcon class="size-4" />
           </button>
         </div>
 
-        <ul v-if="selectedUsers.length > 0" class="space-y-1.5">
+        <ul
+          v-if="selectedUsers.length > 0"
+          class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"
+        >
           <li
-            v-for="u in selectedUsers"
-            :key="u.id"
-            class="flex items-center justify-between px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-slate-800"
+            v-for="(user, index) in selectedUsers"
+            :key="user.id"
+            :class="[
+              'flex items-center gap-3 px-3 py-2.5',
+              index !== selectedUsers.length - 1
+                ? 'border-b border-slate-100 dark:border-slate-800'
+                : '',
+            ]"
           >
-            <span class="text-sm text-slate-900 dark:text-slate-100">{{ u.display_name }}</span>
-            <button
-              @click="removeUser(u.id)"
-              class="text-gray-400 hover:text-rose-500 hover:cursor-pointer transition-colors"
+            <div
+              class="flex size-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
             >
-              <XMarkIcon class="w-4 h-4" />
+              {{ user.display_name.charAt(0).toUpperCase() }}
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                {{ user.display_name }}
+              </p>
+              <p class="truncate text-xs text-slate-400 dark:text-slate-500">
+                @{{ user.username }}
+              </p>
+            </div>
+
+            <button
+              @click="removeUser(user.id)"
+              class="flex size-7 flex-shrink-0 items-center justify-center rounded-full text-slate-300 transition-all hover:cursor-pointer hover:bg-rose-50 hover:text-rose-500 active:scale-95 dark:text-slate-600 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
+              title="Remove user"
+            >
+              <XMarkIcon class="size-4" />
             </button>
           </li>
         </ul>
 
-        <p v-if="error" class="text-xs text-rose-500 dark:text-rose-400">{{ error }}</p>
+        <p v-if="error" class="text-xs text-rose-500 dark:text-rose-400">
+          {{ error }}
+        </p>
+      </div>
 
+      <div class="border-t border-slate-200 px-5 py-4 dark:border-slate-800">
         <button
           @click="save"
-          :disabled="saving"
-          class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed hover:cursor-pointer text-white text-sm font-medium rounded-xl transition-colors dark:bg-emerald-600 dark:hover:bg-emerald-500"
+          :disabled="saving || selectedUsers.length === 0"
+          class="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white transition-all hover:cursor-pointer hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-emerald-500"
         >
-          {{ saving ? 'Creating…' : 'Start Chat' }}
+          {{ saving ? 'Creating…' : mode === 'group' ? 'Create Group' : 'Start Chat' }}
         </button>
       </div>
     </div>

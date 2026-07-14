@@ -19,6 +19,7 @@ import MessageBubble from '@/components/chat/MessageBubble.vue'
 import MessageInput from '@/components/chat/MessageInput.vue'
 import NewChatModal from '@/components/chat/NewChatModal.vue'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
+import GroupMembersModal from '@/components/chat/GroupMembersModal.vue'
 
 const auth = useAuthStore()
 const chatStore = useChatStore()
@@ -46,6 +47,8 @@ const isDeletingChat = ref(false)
 
 const touchStartX = ref(0)
 const touchStartY = ref(0)
+
+const showGroupMembers = ref(false)
 
 chatStore.loadChats()
 
@@ -419,12 +422,14 @@ function onTouchEnd(e: TouchEvent) {
               <MagnifyingGlassIcon v-else class="size-5" />
             </button>
 
-            <div
+            <button
               v-if="chatStore.activeChat.is_group"
-              class="flex size-9 items-center justify-center rounded-full text-slate-400"
+              @click="showGroupMembers = true"
+              class="flex size-9 items-center justify-center rounded-full text-slate-500 transition-all hover:cursor-pointer hover:bg-slate-100 hover:text-emerald-600 active:scale-95 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
+              title="Group members"
             >
               <UsersIcon class="size-5" />
-            </div>
+            </button>
 
             <button
               @click="showDeleteChatModal = true"
@@ -579,6 +584,15 @@ function onTouchEnd(e: TouchEvent) {
       :loading="isDeletingChat"
       @confirm="confirmDeleteChat"
       @cancel="showDeleteChatModal = false"
+    />
+  </Transition>
+
+  <Transition name="modal">
+    <GroupMembersModal
+      v-if="showGroupMembers && chatStore.activeChat?.is_group"
+      :chat-id="chatStore.activeChat.id"
+      :created-by="chatStore.activeChat.created_by"
+      @close="showGroupMembers = false"
     />
   </Transition>
 </template>

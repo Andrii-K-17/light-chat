@@ -1,4 +1,4 @@
-import type { Chat, Message } from '@/types'
+import type { Chat, ChatMember, Message } from '@/types'
 import { fetchWithRefresh } from '@/api/fetchWithRefresh'
 
 /**
@@ -71,5 +71,28 @@ export const updateMessage = (
  */
 export const deleteMessage = (chatID: number, messageID: number): Promise<{ deleted: boolean }> =>
   request<{ deleted: boolean }>(`/api/chats/${chatID}/messages/${messageID}`, {
+    method: 'DELETE',
+  })
+
+/**
+ * Fetches all members of a chat.
+ */
+export const getChatMembers = (chatID: number): Promise<ChatMember[]> =>
+  request<ChatMember[]>(`/api/chats/${chatID}/members`)
+
+/**
+ * Adds a user to a group chat by username.
+ */
+export const addChatMember = (chatID: number, username: string): Promise<ChatMember> =>
+  request<ChatMember>(`/api/chats/${chatID}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ username }),
+  })
+
+/**
+ * Removes a user from a group chat by their ID.
+ */
+export const removeChatMember = (chatID: number, memberID: number): Promise<{ removed: boolean }> =>
+  request<{ removed: boolean }>(`/api/chats/${chatID}/members/${memberID}`, {
     method: 'DELETE',
   })
