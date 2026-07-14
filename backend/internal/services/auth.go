@@ -161,3 +161,16 @@ func (s *AuthService) DeleteAccount(userID int) error {
 	}
 	return s.repo.Delete(userID)
 }
+
+// UpdateProfile applies a partial patch to a user's profile and returns the updated user.
+func (s *AuthService) UpdateProfile(userID int, p repository.UserUpdateParams) (*models.User, error) {
+	if err := s.repo.Update(userID, p); err != nil {
+		return nil, err
+	}
+	return s.repo.FindByID(userID)
+}
+
+// FindByUsername looks up a user by their exact username.
+func (s *AuthService) FindByUsername(username string) (*models.User, error) {
+	return s.repo.FindByUsername(username)
+}

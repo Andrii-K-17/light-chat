@@ -40,14 +40,7 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 
 	hub := ws.NewHub()
 
-	authH := handlers.NewAuthHandler(
-		authSvc,
-		userRepo,
-		cfg.JWTSecret,
-		cfg.JWTExpiry,
-		cfg.RefreshExpiry,
-		cfg.IsProd(),
-	)
+	authH := handlers.NewAuthHandler(authSvc, cfg.JWTSecret, cfg.JWTExpiry, cfg.RefreshExpiry, cfg.IsProd())
 	chatH := handlers.NewChatHandler(chatRepo, messageRepo, userRepo, hub)
 	wsH := ws.NewHandler(hub, messageRepo, chatRepo, cfg.JWTSecret)
 

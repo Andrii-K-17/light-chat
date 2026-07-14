@@ -16,7 +16,6 @@ import (
 // AuthHandler manages HTTP authentication endpoints.
 type AuthHandler struct {
 	svc           *services.AuthService
-	userRepo      repository.UserRepository
 	jwtSecret     string
 	jwtExpiry     time.Duration
 	refreshExpiry time.Duration
@@ -26,7 +25,6 @@ type AuthHandler struct {
 // NewAuthHandler initializes and returns a new AuthHandler.
 func NewAuthHandler(
 	svc *services.AuthService,
-	userRepo repository.UserRepository,
 	jwtSecret string,
 	jwtExpiry time.Duration,
 	refreshExpiry time.Duration,
@@ -34,7 +32,6 @@ func NewAuthHandler(
 ) *AuthHandler {
 	return &AuthHandler{
 		svc:           svc,
-		userRepo:      userRepo,
 		jwtSecret:     jwtSecret,
 		jwtExpiry:     jwtExpiry,
 		refreshExpiry: refreshExpiry,
@@ -204,7 +201,6 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		_ = h.svc.Logout(cookie.Value)
 	}
-
 	h.clearTokenCookies(w)
 	response.JSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
@@ -217,7 +213,6 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, "user not found")
 		return
 	}
-
 	response.JSON(w, http.StatusOK, user)
 }
 
@@ -239,17 +234,12 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.userRepo.Update(userID, repository.UserUpdateParams{
+	user, err := h.svc.UpdateProfile(userID, repository.UserUpdateParams{
 		DisplayName: req.DisplayName,
 		Username:    req.Username,
 		Email:       req.Email,
 		Status:      req.Status,
-	}); err != nil {
-		response.Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-
-	user, err := h.svc.GetByID(userID)
+	})
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
@@ -266,11 +256,10 @@ func (h *AuthHandler) SearchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.userRepo.FindByUsername(username)
+	user, err := h.svc.FindByUsername(username)
 	if err != nil {
 		response.Error(w, http.StatusNotFound, "user not found")
 		return
 	}
-
 	response.JSON(w, http.StatusOK, user)
 }
