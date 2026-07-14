@@ -255,6 +255,12 @@ func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
+	}
+
 	messageID, err := strconv.Atoi(chi.URLParam(r, "messageId"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid message id")
@@ -273,11 +279,121 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
 
-	if chatID, err := h.messageRepo.GetChatID(messageID); err == nil {
-		payload, _ := json.Marshal(map[string]int{"message_id": messageID, "chat_id": chatID})
-		event, _ := json.Marshal(ws.Event{Type: "message_deleted", Payload: payload})
-		h.hub.BroadcastToChat(chatID, event)
+	payload, _ := json.Marshal(map[string]int{
+		"message_id": messageID,
+		"chat_id":    chatID,
+	})
+
+	event, _ := json.Marshal(ws.Event{
+		Type:    "message_deleted",
+		Payload: payload,
+	})
+
+	h.hub.BroadcastToChat(chatID, event)
+}
+
+// GetMembers returns all members of a group chat.
+func (h *ChatHandler) GetMembers(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
 	}
+
+	isMember, err := h.chatRepo.IsMember(chatID, userID)
+	if err != nil || !isMember {
+		response.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	members, err := h.chatRepo.GetMembers(chatID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, members)
+}
+
+// addMemberRequest represents the payload for adding a member by username.
+type addMemberRequest struct {
+	Username string `json:"username"`
+}
+
+// AddMember adds a user to a group chat by username (creator only).
+func (h *ChatHandler) AddMember(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
+	}
+
+	chat, err := h.chatRepo.FindByID(chatID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "chat not found")
+		return
+	}
+	if !chat.IsGroup || (chat.CreatedBy == nil || *chat.CreatedBy != userID) {
+		response.Error(w, http.StatusForbidden, "only group creator can add members")
+		return
+	}
+
+	var req addMemberRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Username) == "" {
+		response.Error(w, http.StatusBadRequest, "username required")
+		return
+	}
+
+	member, err := h.chatRepo.AddMemberByUsername(chatID, strings.TrimSpace(req.Username))
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, member)
+}
+
+// RemoveMember removes a user from a group chat.
+func (h *ChatHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
+	}
+
+	memberID, err := strconv.Atoi(chi.URLParam(r, "memberId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid member id")
+		return
+	}
+
+	chat, err := h.chatRepo.FindByID(chatID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "chat not found")
+		return
+	}
+	if !chat.IsGroup || (chat.CreatedBy == nil || *chat.CreatedBy != userID) {
+		response.Error(w, http.StatusForbidden, "only group creator can remove members")
+		return
+	}
+	if memberID == userID {
+		response.Error(w, http.StatusBadRequest, "cannot remove yourself")
+		return
+	}
+
+	removed, err := h.chatRepo.RemoveMember(chatID, memberID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]bool{"removed": removed})
 }
 
 func mustMarshalChat(v any) json.RawMessage {

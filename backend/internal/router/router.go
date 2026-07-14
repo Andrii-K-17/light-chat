@@ -85,6 +85,13 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 						r.Patch("/{messageId}", chatH.UpdateMessage)
 						r.Delete("/{messageId}", chatH.DeleteMessage)
 					})
+
+					r.Route("/members", func(r chi.Router) {
+						r.Get("/", chatH.GetMembers)
+						r.Post("/", chatH.AddMember)
+
+						r.Delete("/{memberId}", chatH.RemoveMember)
+					})
 				})
 			})
 		})

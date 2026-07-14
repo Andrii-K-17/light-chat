@@ -15,6 +15,8 @@ type ChatRepository interface {
 	IsMember(chatID, userID int) (bool, error)
 	GetMembers(chatID int) ([]models.ChatMember, error)
 	Delete(chatID, userID int) (bool, error)
+	AddMemberByUsername(chatID int, username string) (*models.ChatMember, error)
+	RemoveMember(chatID, userID int) (bool, error)
 }
 
 // pgChatRepository is a PostgreSQL-backed implementation of ChatRepository.
@@ -177,6 +179,42 @@ func (r *pgChatRepository) Delete(chatID, userID int) (bool, error) {
 		    )
 		  )
 	`, chatID, userID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// AddMemberByUsername resolves a username to a user ID and adds them to the chat.
+func (r *pgChatRepository) AddMemberByUsername(chatID int, username string) (*models.ChatMember, error) {
+	var member models.ChatMember
+	err := r.db.QueryRowx(`
+		INSERT INTO chat_members (chat_id, user_id)
+		SELECT $1, id FROM users WHERE username = $2
+		ON CONFLICT DO NOTHING
+		RETURNING (SELECT id FROM users WHERE username = $2),
+		          (SELECT username FROM users WHERE username = $2),
+		          (SELECT display_name FROM users WHERE username = $2),
+		          (SELECT status FROM users WHERE username = $2)
+	`, chatID, username).Scan(
+		&member.ID, &member.Username, &member.DisplayName, &member.Status,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &member, nil
+}
+
+// RemoveMember removes a user from a chat.
+func (r *pgChatRepository) RemoveMember(chatID, userID int) (bool, error) {
+	res, err := r.db.Exec(
+		"DELETE FROM chat_members WHERE chat_id=$1 AND user_id=$2",
+		chatID, userID,
+	)
 	if err != nil {
 		return false, err
 	}
