@@ -10,6 +10,7 @@ import (
 	"github.com/Andrii-K-17/light-chat/internal/middleware"
 	"github.com/Andrii-K-17/light-chat/internal/response"
 	"github.com/Andrii-K-17/light-chat/internal/services"
+	"github.com/Andrii-K-17/light-chat/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -17,16 +18,19 @@ import (
 type ChatHandler struct {
 	chatSvc *services.ChatService
 	msgSvc  *services.MessageService
+	hub     *ws.Hub
 }
 
 // NewChatHandler initializes and returns a new ChatHandler.
 func NewChatHandler(
 	chatSvc *services.ChatService,
 	msgSvc *services.MessageService,
+	hub *ws.Hub,
 ) *ChatHandler {
 	return &ChatHandler{
 		chatSvc: chatSvc,
 		msgSvc:  msgSvc,
+		hub:     hub,
 	}
 }
 
@@ -202,6 +206,12 @@ func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, msg)
+
+	event, _ := json.Marshal(ws.Event{
+		Type:    "message_updated",
+		Payload: mustMarshal(msg),
+	})
+	h.hub.BroadcastToChat(msg.ChatID, event)
 }
 
 // DeleteMessage removes a message owned by the authenticated user.
@@ -214,7 +224,8 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.msgSvc.Delete(messageID, userID); err != nil {
+	chatID, err := h.msgSvc.Delete(messageID, userID)
+	if err != nil {
 		if errors.Is(err, services.ErrMessageNotFound) {
 			response.Error(w, http.StatusForbidden, "forbidden or message not found")
 			return
@@ -224,6 +235,10 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
+
+	payload, _ := json.Marshal(map[string]int{"message_id": messageID, "chat_id": chatID})
+	event, _ := json.Marshal(ws.Event{Type: "message_deleted", Payload: payload})
+	h.hub.BroadcastToChat(chatID, event)
 }
 
 // GetMembers returns all members of a group chat.
@@ -320,4 +335,9 @@ func (h *ChatHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]bool{"removed": removed})
+}
+
+func mustMarshal(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
 }

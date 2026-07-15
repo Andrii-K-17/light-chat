@@ -41,7 +41,7 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 	hub := ws.NewHub()
 
 	chatSvc := services.NewChatService(chatRepo)
-	msgSvc := services.NewMessageService(messageRepo, chatRepo, hub)
+	msgSvc := services.NewMessageService(messageRepo, chatRepo)
 
 	authH := handlers.NewAuthHandler(
 		authSvc,
@@ -50,8 +50,8 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 		cfg.RefreshExpiry,
 		cfg.IsProd(),
 	)
-	chatH := handlers.NewChatHandler(chatSvc, msgSvc)
-	wsH := ws.NewHandler(hub, messageRepo, chatRepo, cfg.JWTSecret)
+	chatH := handlers.NewChatHandler(chatSvc, msgSvc, hub)
+	wsH := ws.NewHandler(hub, msgSvc, cfg.JWTSecret)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {

@@ -5,10 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/Andrii-K-17/light-chat/internal/repository"
+	"github.com/Andrii-K-17/light-chat/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
@@ -27,26 +26,29 @@ type sendMessagePayload struct {
 	Content string `json:"content"`
 }
 
-// Handler processes WebSocket connections, message routing, and chat business logic.
+// MessageSender is the subset of MessageService behavior the WS handler needs.
+type MessageSender interface {
+	IsMember(chatID, userID int) (bool, error)
+	Create(chatID, userID int, content string) (*models.MessageResponse, error)
+}
+
+// Handler manages the WebSocket upgrade and per-connection pump loops.
 type Handler struct {
-	hub         *Hub
-	messageRepo repository.MessageRepository
-	chatRepo    repository.ChatRepository
-	jwtSecret   string
+	hub       *Hub
+	msgSvc    MessageSender
+	jwtSecret string
 }
 
 // NewHandler initializes and returns a new WebSocket Handler.
 func NewHandler(
 	hub *Hub,
-	messageRepo repository.MessageRepository,
-	chatRepo repository.ChatRepository,
+	msgSvc MessageSender,
 	jwtSecret string,
 ) *Handler {
 	return &Handler{
-		hub:         hub,
-		messageRepo: messageRepo,
-		chatRepo:    chatRepo,
-		jwtSecret:   jwtSecret,
+		hub:       hub,
+		msgSvc:    msgSvc,
+		jwtSecret: jwtSecret,
 	}
 }
 
@@ -65,7 +67,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, err := h.chatRepo.IsMember(chatID, userID)
+	isMember, err := h.msgSvc.IsMember(chatID, userID)
 	if err != nil || !isMember {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -155,10 +157,10 @@ func (h *Handler) writePump(c *Client, conn *websocket.Conn) {
 	}
 }
 
-// handleSendMessage persists a new message and broadcasts it to all chat members.
+// handleSendMessage delegates persistence to MessageService and broadcasts the result.
 func (h *Handler) handleSendMessage(c *Client, payload json.RawMessage) {
 	var p sendMessagePayload
-	if err := json.Unmarshal(payload, &p); err != nil || strings.TrimSpace(p.Content) == "" {
+	if err := json.Unmarshal(payload, &p); err != nil {
 		return
 	}
 
@@ -166,7 +168,7 @@ func (h *Handler) handleSendMessage(c *Client, payload json.RawMessage) {
 		return
 	}
 
-	msg, err := h.messageRepo.Create(c.ChatID, c.UserID, strings.TrimSpace(p.Content))
+	msg, err := h.msgSvc.Create(c.ChatID, c.UserID, p.Content)
 	if err != nil {
 		slog.Error("ws failed to save message", "error", err)
 		return
@@ -209,9 +211,6 @@ func (h *Handler) extractUserID(r *http.Request) (int, error) {
 }
 
 func mustMarshal(v any) json.RawMessage {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err.Error())
-	}
+	b, _ := json.Marshal(v)
 	return b
 }
