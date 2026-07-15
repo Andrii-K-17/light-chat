@@ -40,8 +40,17 @@ func New(db *sqlx.DB, cfg *config.Config) http.Handler {
 
 	hub := ws.NewHub()
 
-	authH := handlers.NewAuthHandler(authSvc, cfg.JWTSecret, cfg.JWTExpiry, cfg.RefreshExpiry, cfg.IsProd())
-	chatH := handlers.NewChatHandler(chatRepo, messageRepo, userRepo, hub)
+	chatSvc := services.NewChatService(chatRepo)
+	msgSvc := services.NewMessageService(messageRepo, chatRepo, hub)
+
+	authH := handlers.NewAuthHandler(
+		authSvc,
+		cfg.JWTSecret,
+		cfg.JWTExpiry,
+		cfg.RefreshExpiry,
+		cfg.IsProd(),
+	)
+	chatH := handlers.NewChatHandler(chatSvc, msgSvc)
 	wsH := ws.NewHandler(hub, messageRepo, chatRepo, cfg.JWTSecret)
 
 	r.Route("/api", func(r chi.Router) {

@@ -2,37 +2,31 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/Andrii-K-17/light-chat/internal/middleware"
-	"github.com/Andrii-K-17/light-chat/internal/repository"
 	"github.com/Andrii-K-17/light-chat/internal/response"
-	"github.com/Andrii-K-17/light-chat/internal/ws"
+	"github.com/Andrii-K-17/light-chat/internal/services"
 	"github.com/go-chi/chi/v5"
 )
 
 // ChatHandler manages chat-related HTTP endpoints.
 type ChatHandler struct {
-	chatRepo    repository.ChatRepository
-	messageRepo repository.MessageRepository
-	userRepo    repository.UserRepository
-	hub         *ws.Hub
+	chatSvc *services.ChatService
+	msgSvc  *services.MessageService
 }
 
 // NewChatHandler initializes and returns a new ChatHandler.
 func NewChatHandler(
-	chatRepo repository.ChatRepository,
-	messageRepo repository.MessageRepository,
-	userRepo repository.UserRepository,
-	hub *ws.Hub,
+	chatSvc *services.ChatService,
+	msgSvc *services.MessageService,
 ) *ChatHandler {
 	return &ChatHandler{
-		chatRepo:    chatRepo,
-		messageRepo: messageRepo,
-		userRepo:    userRepo,
-		hub:         hub,
+		chatSvc: chatSvc,
+		msgSvc:  msgSvc,
 	}
 }
 
@@ -40,7 +34,7 @@ func NewChatHandler(
 func (h *ChatHandler) GetChats(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
-	chats, err := h.chatRepo.FindAllByUser(userID)
+	chats, err := h.chatSvc.GetAll(userID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
@@ -66,46 +60,39 @@ func (h *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !req.IsGroup && len(req.MemberIDs) == 1 {
-		existing, err := h.chatRepo.FindDirectChat(userID, req.MemberIDs[0])
-		if err == nil {
-			members, _ := h.chatRepo.GetMembers(existing.ID)
-			response.JSON(w, http.StatusOK, map[string]any{
-				"id":       existing.ID,
-				"name":     existing.Name,
-				"is_group": existing.IsGroup,
-				"members":  members,
-			})
-			return
-		}
-	}
-
-	chat, err := h.chatRepo.Create(req.Name, req.IsGroup, userID)
+	chat, err := h.chatSvc.Create(userID, services.CreateChatPayload{
+		Name:      req.Name,
+		IsGroup:   req.IsGroup,
+		MemberIDs: req.MemberIDs,
+	})
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
-	if err := h.chatRepo.AddMember(chat.ID, userID); err != nil {
+	response.JSON(w, http.StatusCreated, chat)
+}
+
+// DeleteChat removes a chat if the requesting user has permission.
+func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid chat id")
+		return
+	}
+
+	if err := h.chatSvc.Delete(chatID, userID); err != nil {
+		if errors.Is(err, services.ErrNotChatMember) {
+			response.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
-	for _, memberID := range req.MemberIDs {
-		if memberID == userID {
-			continue
-		}
-		_ = h.chatRepo.AddMember(chat.ID, memberID)
-	}
-
-	members, _ := h.chatRepo.GetMembers(chat.ID)
-
-	response.JSON(w, http.StatusCreated, map[string]any{
-		"id":       chat.ID,
-		"name":     chat.Name,
-		"is_group": chat.IsGroup,
-		"members":  members,
-	})
+	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 // GetMessages returns paginated message history for a chat.
@@ -115,12 +102,6 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid chat id")
-		return
-	}
-
-	isMember, err := h.chatRepo.IsMember(chatID, userID)
-	if err != nil || !isMember {
-		response.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -137,13 +118,15 @@ func (h *ChatHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages, err := h.messageRepo.FindByChatID(chatID, limit, offset)
+	messages, err := h.msgSvc.GetHistory(chatID, userID, limit, offset)
 	if err != nil {
+		if errors.Is(err, services.ErrNotChatMember) {
+			response.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-
-	_ = h.messageRepo.MarkChatAsRead(chatID, userID)
 
 	response.JSON(w, http.StatusOK, messages)
 }
@@ -155,12 +138,6 @@ func (h *ChatHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid chat id")
-		return
-	}
-
-	isMember, err := h.chatRepo.IsMember(chatID, userID)
-	if err != nil || !isMember {
-		response.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -177,36 +154,17 @@ func (h *ChatHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages, err := h.messageRepo.Search(chatID, query, limit)
+	messages, err := h.msgSvc.Search(chatID, userID, query, limit)
 	if err != nil {
+		if errors.Is(err, services.ErrNotChatMember) {
+			response.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
 	response.JSON(w, http.StatusOK, messages)
-}
-
-// DeleteChat removes a chat if the requesting user has permission.
-func (h *ChatHandler) DeleteChat(w http.ResponseWriter, r *http.Request) {
-	userID := middleware.GetUserID(r.Context())
-
-	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid chat id")
-		return
-	}
-
-	deleted, err := h.chatRepo.Delete(chatID, userID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !deleted {
-		response.Error(w, http.StatusForbidden, "forbidden")
-		return
-	}
-
-	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 // updateMessageRequest represents the message edit payload.
@@ -230,36 +188,25 @@ func (h *ChatHandler) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content := strings.TrimSpace(req.Content)
-	if content == "" {
-		response.Error(w, http.StatusUnprocessableEntity, "content is required")
-		return
-	}
-
-	msg, err := h.messageRepo.Update(messageID, userID, content)
+	msg, err := h.msgSvc.Update(messageID, userID, req.Content)
 	if err != nil {
-		response.Error(w, http.StatusForbidden, "forbidden or message not found")
+		switch {
+		case errors.Is(err, services.ErrEmptyContent):
+			response.Error(w, http.StatusUnprocessableEntity, err.Error())
+		case errors.Is(err, services.ErrMessageNotFound):
+			response.Error(w, http.StatusForbidden, "forbidden or message not found")
+		default:
+			response.Error(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 
 	response.JSON(w, http.StatusOK, msg)
-
-	event, _ := json.Marshal(ws.Event{
-		Type:    "message_updated",
-		Payload: mustMarshalChat(msg),
-	})
-	h.hub.BroadcastToChat(msg.ChatID, event)
 }
 
 // DeleteMessage removes a message owned by the authenticated user.
 func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-
-	chatID, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid chat id")
-		return
-	}
 
 	messageID, err := strconv.Atoi(chi.URLParam(r, "messageId"))
 	if err != nil {
@@ -267,29 +214,16 @@ func (h *ChatHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := h.messageRepo.Delete(messageID, userID)
-	if err != nil {
+	if err := h.msgSvc.Delete(messageID, userID); err != nil {
+		if errors.Is(err, services.ErrMessageNotFound) {
+			response.Error(w, http.StatusForbidden, "forbidden or message not found")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !deleted {
-		response.Error(w, http.StatusForbidden, "forbidden or message not found")
 		return
 	}
 
 	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
-
-	payload, _ := json.Marshal(map[string]int{
-		"message_id": messageID,
-		"chat_id":    chatID,
-	})
-
-	event, _ := json.Marshal(ws.Event{
-		Type:    "message_deleted",
-		Payload: payload,
-	})
-
-	h.hub.BroadcastToChat(chatID, event)
 }
 
 // GetMembers returns all members of a group chat.
@@ -302,14 +236,12 @@ func (h *ChatHandler) GetMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, err := h.chatRepo.IsMember(chatID, userID)
-	if err != nil || !isMember {
-		response.Error(w, http.StatusForbidden, "forbidden")
-		return
-	}
-
-	members, err := h.chatRepo.GetMembers(chatID)
+	members, err := h.chatSvc.GetMembers(chatID, userID)
 	if err != nil {
+		if errors.Is(err, services.ErrNotChatMember) {
+			response.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -332,25 +264,24 @@ func (h *ChatHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chat, err := h.chatRepo.FindByID(chatID)
-	if err != nil {
-		response.Error(w, http.StatusNotFound, "chat not found")
-		return
-	}
-	if !chat.IsGroup || (chat.CreatedBy == nil || *chat.CreatedBy != userID) {
-		response.Error(w, http.StatusForbidden, "only group creator can add members")
-		return
-	}
-
 	var req addMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Username) == "" {
 		response.Error(w, http.StatusBadRequest, "username required")
 		return
 	}
 
-	member, err := h.chatRepo.AddMemberByUsername(chatID, strings.TrimSpace(req.Username))
+	member, err := h.chatSvc.AddMember(chatID, userID, req.Username)
 	if err != nil {
-		response.Error(w, http.StatusNotFound, "user not found")
+		switch {
+		case errors.Is(err, services.ErrChatNotFound):
+			response.Error(w, http.StatusNotFound, "chat not found")
+		case errors.Is(err, services.ErrNotGroupCreator):
+			response.Error(w, http.StatusForbidden, "only group creator can add members")
+		case errors.Is(err, services.ErrUserNotFound):
+			response.Error(w, http.StatusNotFound, "user not found")
+		default:
+			response.Error(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 
@@ -373,30 +304,20 @@ func (h *ChatHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chat, err := h.chatRepo.FindByID(chatID)
+	removed, err := h.chatSvc.RemoveMember(chatID, userID, memberID)
 	if err != nil {
-		response.Error(w, http.StatusNotFound, "chat not found")
-		return
-	}
-	if !chat.IsGroup || (chat.CreatedBy == nil || *chat.CreatedBy != userID) {
-		response.Error(w, http.StatusForbidden, "only group creator can remove members")
-		return
-	}
-	if memberID == userID {
-		response.Error(w, http.StatusBadRequest, "cannot remove yourself")
-		return
-	}
-
-	removed, err := h.chatRepo.RemoveMember(chatID, memberID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "internal error")
+		switch {
+		case errors.Is(err, services.ErrChatNotFound):
+			response.Error(w, http.StatusNotFound, "chat not found")
+		case errors.Is(err, services.ErrNotGroupCreator):
+			response.Error(w, http.StatusForbidden, "only group creator can remove members")
+		case errors.Is(err, services.ErrCannotRemoveSelf):
+			response.Error(w, http.StatusBadRequest, err.Error())
+		default:
+			response.Error(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 
 	response.JSON(w, http.StatusOK, map[string]bool{"removed": removed})
-}
-
-func mustMarshalChat(v any) json.RawMessage {
-	b, _ := json.Marshal(v)
-	return b
 }
